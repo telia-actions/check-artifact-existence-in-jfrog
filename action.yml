@@ -1,0 +1,106 @@
+name: 'Check artifact existence in JFrog'
+description: 'Checks if artifact exists in given repository by given search phrase. Outputs "True" or "False" in outputs "artifact_exists". Uses Powershell.'
+
+outputs:
+  artifact_exists:
+    description: 'True if artifact exists, otherwise False'
+    value: ${{ steps.find.outputs.artifact_exists }}
+
+inputs:
+  jfrog-repo-name:
+    description: 'Name of JFrog repository to search in'
+    required: true
+  jfrog-username:
+    description: 'JFrog username to use for searching artifact. Should have READ permissions.'
+    required: true
+  jfrog-password:
+    description: 'JFrog user password'
+    required: false
+  search-phrase:
+    description: 'Substring of artifact name, usually short GIT SHA. Can be multiple search phrases delimited by triple pipe sign |||'
+    required: true
+  search-phrase-cleanup:
+    description: 'Flag indicating if search-phrase input should be cleaned from spaces. Accepts "True" or "False" values. "True" by default'
+    required: false
+  local-storage-path:
+    description: 'Optional path of local (usually self-hosted) runner''s directory where artifacts might be stored for faster access (instead of downloading from JFrog and extracting). Action continues with searching in JFrog if no matches found locally.'
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Find artifact
+      id: find
+      shell: powershell
+      run: |
+        
+        function WriteLog {
+          param (
+            $Text
+          )
+          
+          Write-Host "$(Get-Date -Format o): " -NoNewline -BackgroundColor DarkMagenta -ForegroundColor Yellow
+          Write-Host $Text -BackgroundColor DarkMagenta -ForegroundColor Gray
+        }
+        
+        $searchValue = "${{ inputs.search-phrase }}"
+        if ("${{ inputs.search-phrase-cleanup }}" -ne "False") {
+          $searchValue = "$searchValue".Replace(" ", "")
+        }
+        
+        $artifactExists = $true
+        $firstArtifact = $null
+        $localStoragePath = "${{ inputs.local-storage-path }}"
+        
+        $searchValues = $searchValue -split "\|\|\|"
+        
+        foreach ($search in $searchValues) {
+        
+          # Checking local storage first
+          if (!!$localStoragePath) {
+            WriteLog("Searching for artifact with '$search' in local storage '$localStoragePath'")
+            $results = Get-ChildItem -Path "$localStoragePath" -Filter "*$search*"
+            $firstArtifact = $results | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            
+            if ($firstArtifact -eq $null) {
+              WriteLog("No artifacts found in local storage '$localStoragePath'")
+            } else {
+              WriteLog("Found artifact '$firstArtifact' in local storage")
+            }
+          }
+          
+          # Searching in JFrog
+          if ($firstArtifact -eq $null) {
+            WriteLog("Searching for artifact with '$search' in JFrog repository '${{ inputs.jfrog-repo-name }}'")
+            
+            try {
+            
+              $authHeaderValue = "Basic " + [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes("${{ inputs.jfrog-username }}:${{ inputs.jfrog-password }}"))
+              $response = Invoke-WebRequest `
+                -Method Get `
+                -Uri "https://jfrog.teliacompany.io/artifactory/api/search/artifact?name=$search&repos=${{ inputs.jfrog-repo-name }}" `
+                -Headers @{ "Authorization" = $authHeaderValue; "X-Result-Detail" = "info" } `
+                -UseBasicParsing
+              
+              $results = (ConvertFrom-Json -InputObject ([System.Text.Encoding]::UTF8.GetString($response.Content))).results
+              $firstArtifact = $results | Sort-Object created -Descending | Select-Object -First 1
+              
+            } catch {
+            
+              WriteLog("Error while searching in JFrog, treating as if artifact doesn't exist")
+              $artifactExists = $false
+              break
+            }
+            
+            if ($firstArtifact -eq $null) {
+              WriteLog("No artifacts found in JFrog repository '${{ inputs.jfrog-repo-name }}'")
+              $artifactExists = $false
+              break
+            } else {
+              WriteLog("Found artifact '$firstArtifact' in JFrog repository")
+            }
+          }
+        }
+        
+        echo "artifact_exists=$artifactExists"
+        echo "artifact_exists=$artifactExists" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
