@@ -8,9 +8,9 @@ Action gives output "artifact_exists" with possible values "True" or "False".
 ## Inputs
 
 ### jfrog-repo-name:
-Name of JFrog repository to download from. **Required**
+Name of JFrog repository to download from. Search in JFrog is skipped if value is not provided.
 ### jfrog-username:
-  JFrog username to use for downloading artifact. Should have READ permissions. **Required**
+  JFrog username to use for downloading artifact. Should have READ permissions.
 ### jfrog-password:
   JFrog user password.
 ### search-phrase:

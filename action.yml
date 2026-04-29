@@ -8,11 +8,11 @@ outputs:
 
 inputs:
   jfrog-repo-name:
-    description: 'Name of JFrog repository to search in'
-    required: true
+    description: 'Name of JFrog repository to search in. Search in JFrog is skipped if value is not provided.'
+    required: false
   jfrog-username:
     description: 'JFrog username to use for searching artifact. Should have READ permissions.'
-    required: true
+    required: false
   jfrog-password:
     description: 'JFrog user password'
     required: false
@@ -50,6 +50,11 @@ runs:
         $artifactExists = $true
         $firstArtifact = $null
         $localStoragePath = "${{ inputs.local-storage-path }}"
+        $jfrogRepo = "${{ inputs.jfrog-repo-name }}"
+        
+        if (!$jfrogRepo -and !$localStoragePath) {
+          throw "A value for at least on of 'local-storage-path' or 'jfrog-repo-name' parameters should be provided"
+        }
         
         $searchValues = $searchValue -split "\|\|\|"
         
@@ -70,14 +75,20 @@ runs:
           
           # Searching in JFrog
           if ($firstArtifact -eq $null) {
-            WriteLog("Searching for artifact with '$search' in JFrog repository '${{ inputs.jfrog-repo-name }}'")
+            
+            if (!$jfrogRepo) {
+              $artifactExists = $false
+              break
+            }
+            
+            WriteLog("Searching for artifact with '$search' in JFrog repository '$jfrogRepo'")
             
             try {
             
               $authHeaderValue = "Basic " + [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes("${{ inputs.jfrog-username }}:${{ inputs.jfrog-password }}"))
               $response = Invoke-WebRequest `
                 -Method Get `
-                -Uri "https://jfrog.teliacompany.io/artifactory/api/search/artifact?name=$search&repos=${{ inputs.jfrog-repo-name }}" `
+                -Uri "https://jfrog.teliacompany.io/artifactory/api/search/artifact?name=$search&repos=$jfrogRepo" `
                 -Headers @{ "Authorization" = $authHeaderValue; "X-Result-Detail" = "info" } `
                 -UseBasicParsing
               
@@ -92,11 +103,11 @@ runs:
             }
             
             if ($firstArtifact -eq $null) {
-              WriteLog("No artifacts found in JFrog repository '${{ inputs.jfrog-repo-name }}'")
+              WriteLog("No artifacts found in JFrog repository '$jfrogRepo'")
               $artifactExists = $false
               break
             } else {
-              WriteLog("Found artifact '$firstArtifact' in JFrog repository")
+              WriteLog("Found artifact '$firstArtifact' in JFrog repository '$jfrogRepo'")
             }
           }
         }
