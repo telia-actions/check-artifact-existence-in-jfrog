@@ -10,9 +10,9 @@ Action gives output "artifact_exists" with possible values "True" or "False".
 ### jfrog-repo-name:
 Name of JFrog repository to download from. Search in JFrog is skipped if value is not provided.
 ### jfrog-username:
-  JFrog username to use for downloading artifact. Should have READ permissions.
+  Depracated. JFrog username to use for downloading artifact. Should have READ permissions. Should be omitted if JFrog OIDC with GitHub is set.
 ### jfrog-password:
-  JFrog user password.
+  Depracated. JFrog user password. Should be omitted if JFrog OIDC with GitHub is set.
 ### search-phrase:
   Substring of artifact name, usually short GIT SHA. Multiple values can be passed as single string delimited with '|||' (triple pipe symbols). In that case all given artifacts should exist for outcome to be 'True' **Required**
 ### search-phrase-cleanup:
@@ -33,6 +33,12 @@ Can have values "True" or "False".
     on:
     workflow_dispatch:
     
+    # This is required for JFrog as per
+    # https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-cloud-providers#adding-permissions-settings
+    permissions:
+      id-token: write
+      contents: read
+    
     jobs:
       check:
         outputs:
@@ -44,8 +50,6 @@ Can have values "True" or "False".
             uses: telia-actions/check-artifact-existence-in-jfrog@v1
             with:
               jfrog-repo-name: 'some-jfrog-repo-name'
-              jfrog-username: ${{ vars.JFROG_USERNAME }}
-              jfrog-password: ${{ secrets.JFROG_PASSWORD }}
               search-phrase: 'WEB-*-${{ github.sha }} ||| API-*-${{ github.sha }}'
 
       build:
